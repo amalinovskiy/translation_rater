@@ -56,7 +56,7 @@ class Ratings:
                 values.append(rating_object.rating)
                 segments.append(rating_object.segment_id)
 
-        return values
+        return values if len(values) >= 100 else []
 
     def get_rating_values_for_batch(self, batch_id):
         values = []
@@ -86,12 +86,12 @@ class Ratings:
     def get_rater_ids(self, batch_id):
         values = []
         for rating_object in self.ratings:
-            if rating_object.batch_id == batch_id and rating_object.rater_id not in values:
+            if rating_object.batch_id == batch_id and rating_object.rater_id not in values and rating_object.rater_id != 156 and rating_object.rater_id != 152 and rating_object.rater_id != 158 and rating_object.rater_id != 157:
                 values.append(rating_object.rater_id)
 
-        return values[0:5]
+        return values
                 
-    def print_kappa(self, method, one_off=False):
+    def print_kappa(self, method, one_off=False, replace=False, limit=True):
         mean_kappa_same = []
         mean_kappa_diff = []
 
@@ -104,11 +104,17 @@ class Ratings:
             kappas_diff = []
 
             # calculating agreement for pairs from the same batches and different batches
-            while len(checked_pairs_same) < 20 or len(checked_pairs_diff) < 20:
-                id1 = random.choice(self.ids)
-                id2 = random.choice(self.ids)
-                pair = sorted([id1, id2])
-                if pair not in checked_pairs and id1 != id2:
+            while (limit and len(checked_pairs_same) < 20 or len(checked_pairs_diff) < 20) or (not limit and len(checked_pairs_same) < 20 or len(checked_pairs_diff) < 100):
+                if not replace:
+                    id1 = random.choice(self.ids)
+                    id2 = random.choice(self.ids)
+                    pair = sorted([id1, id2])
+                else:
+                    pair = sorted(numpy.random.choice(self.ids, 2))
+                    id1 = pair[0]
+                    id2 = pair[1]
+
+                if (pair not in checked_pairs or replace) and id1 != id2:
                     values_first = self.get_rating_values(id1)
                     values_second = self.get_rating_values(id2)
                     if len(values_first) != len(values_second) or len(values_first) == 0:
@@ -133,6 +139,45 @@ class Ratings:
 
         print("Kappa same group: " + str(numpy.mean(mean_kappa_same)) + " different groups: " + str(numpy.mean(mean_kappa_diff)))
         print("Confidence same: " + str(stats.norm.interval(0.999, loc=numpy.mean(mean_kappa_same), scale=numpy.std(mean_kappa_same)/math.sqrt(50))) + " different: " + str(stats.norm.interval(0.999, loc=numpy.mean(mean_kappa_diff), scale=numpy.std(mean_kappa_diff)/math.sqrt(50))))
+
+    def print_kappa_for_batch(self, batch_id, method, one_off=False, replace=True):
+        mean_kappa = []
+        batch_ids = self.get_rater_ids(batch_id)
+
+        for i in range(0,50):
+
+            checked_pairs = []
+            kappas = []
+
+            # calculating agreement for pairs from the same batches and different batches
+            while len(checked_pairs) < 5:
+                if not replace:
+                    id1 = random.choice(self.ids)
+                    id2 = random.choice(self.ids)
+                    pair = sorted([id1, id2])
+                else:
+                    pair = sorted(numpy.random.choice(self.ids, 2))
+                    id1 = pair[0]
+                    id2 = pair[1]
+                if (pair not in checked_pairs or replace) and id1 != id2:
+                    values_first = self.get_rating_values(id1)
+                    values_second = self.get_rating_values(id2)
+                    if len(values_first) != len(values_second) or len(values_first) == 0:
+                        continue
+
+                    if method == 'standard':
+                        kappa = metrics.kappa(values_first, values_second)
+                    else:
+                        kappa = metrics.kappa(values_first, values_second, method, one_off)
+
+                    kappas.append(kappa)
+
+                    checked_pairs.append(pair)
+
+            mean_kappa.append(numpy.mean(kappas))
+
+        print("Kappa group " + str(batch_id) + ": " + str(numpy.mean(mean_kappa)))
+        print("Confidence: " + str(stats.norm.interval(0.999, loc=numpy.mean(mean_kappa), scale=numpy.std(mean_kappa)/math.sqrt(50))))
 
     def print_segments_with_highest_std(self):
         segment_stds = {}
@@ -177,7 +222,7 @@ class Ratings:
         print(numpy.mean(v))
 
 
-r = Ratings('data.txt')
+r = Ratings('data6.txt')
 
 if True:
     print("Standard kappa")
@@ -201,8 +246,14 @@ if True:
     print("Group metrics: ")
     r.print_group_metrics([1, 2, 3, 4, 5])
 
-# stds for different segments
 if True:
+    print("Ingroup kappas: ")
+    for i in [1, 2, 3, 4, 5]:
+        r.print_kappa_for_batch(i, "standard")
+        r.print_kappa_for_batch(i, "linear", False)
+        r.print_kappa_for_batch(i, "linear", True)
+
+if False:
     print("Chronological evolution of std: ")
     r.print_std_for_slice(0, 20)
     r.print_std_for_slice(20, 40)
